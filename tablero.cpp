@@ -2,19 +2,33 @@
 #include <cstdlib>
 #include <iostream>
 
-// ─── Inicializar tablero y visitado en cero/false ────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// INICIALIZACION
+// Recorre toda la matriz y pone cada celda en VACIO (0) y visitado en false.
+// Se usan los parametros filas/columnas para no depender de constantes fijas,
+// permitiendo tableros de tamaño variable en tiempo de ejecucion.
+// ─────────────────────────────────────────────────────────────────────────────
 void inicializar_tablero(int tablero[][MAX_COLUMNAS],
                          bool visitado[][MAX_COLUMNAS],
+                         int conteo[][MAX_COLUMNAS],
                          int filas, int columnas) {
     for (int i = 0; i < filas; i++) {
         for (int j = 0; j < columnas; j++) {
             tablero[i][j]  = VALOR_VACIO;
             visitado[i][j] = false;
+            conteo[i][j]   = 0;  // cuantas veces paso el raton por aqui
         }
     }
 }
 
-// ─── Colocar N elementos de un tipo en posiciones aleatorias válidas ──────────
+// ─────────────────────────────────────────────────────────────────────────────
+// ALEATORIEDAD
+// rand() % filas genera un numero entre 0 y filas-1.
+// srand(time(0)) en main inicializa la semilla con el tiempo actual,
+// garantizando que cada partida tenga posiciones distintas.
+// Se valida que la celda destino este VACIA y no sea la posicion del raton
+// antes de colocar cada actor. Si no cumple, se reintenta (maximo 10000 veces).
+// ─────────────────────────────────────────────────────────────────────────────
 static void randomizar_actor(int tablero[][MAX_COLUMNAS],
                               int filas, int columnas,
                               int cantidad, int tipo,
@@ -24,11 +38,12 @@ static void randomizar_actor(int tablero[][MAX_COLUMNAS],
     const int MAX_INTENTOS = 10000;
 
     while (colocados < cantidad && intentos < MAX_INTENTOS) {
+        // Generar posicion aleatoria dentro del rango valido
         int f = rand() % filas;
         int c = rand() % columnas;
         intentos++;
 
-        // No colocar sobre la posición inicial del ratón ni sobre otra celda ocupada
+        // Rechazar si es la posicion inicial del raton o si la celda ya tiene algo
         if ((f == excluir_f && c == excluir_c) || tablero[f][c] != VALOR_VACIO)
             continue;
 
@@ -39,27 +54,36 @@ static void randomizar_actor(int tablero[][MAX_COLUMNAS],
 
 void colocar_actores(int tablero[][MAX_COLUMNAS],
                      int filas, int columnas) {
-    // El ratón inicia en la esquina superior DERECHA (fila 0, columna última)
+    // El raton siempre inicia en esquina superior DERECHA (fila 0, ultima columna)
     int raton_f = 0;
     int raton_c = columnas - 1;
 
+    // Se colocan primero gatos, luego trampas, luego queso
+    // para que la validacion de celda ocupada funcione correctamente
     randomizar_actor(tablero, filas, columnas, NUM_GATOS,   VALOR_GATO,   raton_f, raton_c);
     randomizar_actor(tablero, filas, columnas, NUM_TRAMPAS, VALOR_TRAMPA, raton_f, raton_c);
     randomizar_actor(tablero, filas, columnas, NUM_QUESOS,  VALOR_QUESO,  raton_f, raton_c);
 }
 
-// ─── Marcar celdas adyacentes (arriba, abajo, izq, der) como peligrosas ──────
+// ─────────────────────────────────────────────────────────────────────────────
+// CALCULO DE PELIGROS
+// Despues de colocar actores, se recorre el tablero buscando gatos y trampas.
+// Para cada uno se marcan sus 4 celdas adyacentes (arriba, abajo, izq, der)
+// con el valor de peligro correspondiente, SOLO si la celda esta vacia.
+// Esto evita pisar actores ya colocados con un valor de peligro.
+// ─────────────────────────────────────────────────────────────────────────────
 static void marcar_adyacentes(int tablero[][MAX_COLUMNAS],
                                int filas, int columnas,
                                int f, int c, int tipo_peligro) {
-    int df[] = {-1, 1,  0, 0};
-    int dc[] = { 0, 0, -1, 1};
+    // Vectores de direccion: arriba, abajo, izquierda, derecha
+    int df[] = {-1,  1,  0, 0};
+    int dc[] = { 0,  0, -1, 1};
 
     for (int d = 0; d < 4; d++) {
         int nf = f + df[d];
         int nc = c + dc[d];
+        // Validar que no salga del tablero
         if (nf >= 0 && nf < filas && nc >= 0 && nc < columnas) {
-            // Solo marcar si la celda está vacía (no pisar actores)
             if (tablero[nf][nc] == VALOR_VACIO)
                 tablero[nf][nc] = tipo_peligro;
         }
@@ -78,7 +102,27 @@ void calcular_peligros(int tablero[][MAX_COLUMNAS],
     }
 }
 
-// ─── Imprimir el tablero con símbolos ─────────────────────────────────────────
+// ─── Convierte valor entero a nombre legible (usado en tablas) ───────────────
+const char* nombre_valor(int valor) {
+    switch (valor) {
+        case VALOR_VACIO:           return "Vacio         ";
+        case VALOR_RATON:           return "Raton         ";
+        case VALOR_GATO:            return "GATO          ";
+        case VALOR_TRAMPA:          return "TRAMPA        ";
+        case VALOR_QUESO:           return "QUESO         ";
+        case VALOR_PELIGRO_GATO:    return "Peligro gato  ";
+        case VALOR_PELIGRO_TRAMPA:  return "Peligro trampa";
+        default:                    return "Desconocido   ";
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IMPRESION DEL TABLERO
+// Recorre la matriz fila por fila e imprime un simbolo por celda:
+//   R = Raton (posicion actual)    G = Gato      T = Trampa
+//   Q = Queso                      ! = Peligro gato
+//   ~ = Peligro trampa             * = Celda visitada   . = Vacia sin visitar
+// ─────────────────────────────────────────────────────────────────────────────
 void imprimir_tablero(int tablero[][MAX_COLUMNAS],
                       bool visitado[][MAX_COLUMNAS],
                       int filas, int columnas,
@@ -89,11 +133,9 @@ void imprimir_tablero(int tablero[][MAX_COLUMNAS],
     std::cout << "   RATON COME QUESO  |  Turno: " << turno << "\n";
     std::cout << "========================================\n\n";
 
-    // Encabezado de columnas
+    // Encabezado de indices de columna
     std::cout << "   ";
-    for (int j = 0; j < columnas; j++) {
-        std::cout << j % 10 << " ";
-    }
+    for (int j = 0; j < columnas; j++) std::cout << j % 10 << " ";
     std::cout << "\n   ";
     for (int j = 0; j < columnas; j++) std::cout << "--";
     std::cout << "\n";
@@ -106,8 +148,7 @@ void imprimir_tablero(int tablero[][MAX_COLUMNAS],
                 c = 'R';
             } else {
                 switch (tablero[i][j]) {
-                    case VALOR_VACIO:
-                        c = visitado[i][j] ? '*' : '.'; break;
+                    case VALOR_VACIO:           c = visitado[i][j] ? '*' : '.'; break;
                     case VALOR_GATO:            c = 'G'; break;
                     case VALOR_TRAMPA:          c = 'T'; break;
                     case VALOR_QUESO:           c = 'Q'; break;
@@ -125,62 +166,89 @@ void imprimir_tablero(int tablero[][MAX_COLUMNAS],
     std::cout << "             !=Peligro gato  ~=Peligro trampa  *=Visitado\n\n";
 }
 
-// ─── Tabla de percepciones del turno actual ───────────────────────────────────
-void imprimir_tabla_percepciones(int tablero[][MAX_COLUMNAS],
-                                 bool visitado[][MAX_COLUMNAS],
-                                 int filas, int columnas,
-                                 int fila_raton, int col_raton) {
-    std::cout << "--------------------------------------------\n";
-    std::cout << "        TABLA DE PERCEPCIONES\n";
-    std::cout << "--------------------------------------------\n";
-    std::cout << "Direccion  | Pos     | Contenido       | Visitado\n";
-    std::cout << "--------------------------------------------\n";
+// ─────────────────────────────────────────────────────────────────────────────
+// MATRIZ DE SENSACIONES
+// Cada turno se captura el entorno inmediato del raton (4 direcciones).
+// Se guarda en un arreglo de structs Sensacion de tamaño MAX_TURNOS.
+// Esta es la "memoria perceptual" del agente: lo que percibio en cada momento.
+// ─────────────────────────────────────────────────────────────────────────────
+void registrar_sensacion(Sensacion sensaciones[], int &num_sensaciones,
+                         int tablero[][MAX_COLUMNAS],
+                         bool visitado[][MAX_COLUMNAS],
+                         int filas, int columnas,
+                         int turno, int fila_raton, int col_raton) {
 
-    // Nombre, delta fila, delta columna
-    const char* nombres[4] = {"Arriba   ", "Abajo    ", "Izquierda", "Derecha  "};
-    int df[4] = {-1,  1,  0, 0};
-    int dc[4] = { 0,  0, -1, 1};
+    if (num_sensaciones >= MAX_TURNOS) return;
 
-    for (int d = 0; d < 4; d++) {
-        int nf = fila_raton + df[d];
-        int nc = col_raton  + dc[d];
+    Sensacion s;
+    s.turno      = turno;
+    s.fila_raton = fila_raton;
+    s.col_raton  = col_raton;
 
-        std::cout << nombres[d] << "  | ";
+    // Arriba
+    int nf = fila_raton - 1, nc = col_raton;
+    s.arriba       = (nf >= 0)              ? tablero[nf][nc]  : -1;
+    s.visitado_arr = (nf >= 0)              ? visitado[nf][nc] : false;
 
-        if (nf < 0 || nf >= filas || nc < 0 || nc >= columnas) {
-            std::cout << "  --   | Fuera del mapa   |   ---\n";
-            continue;
-        }
+    // Abajo
+    nf = fila_raton + 1; nc = col_raton;
+    s.abajo        = (nf < filas)           ? tablero[nf][nc]  : -1;
+    s.visitado_aba = (nf < filas)           ? visitado[nf][nc] : false;
 
-        std::cout << "(" << nf << "," << nc << ") | ";
+    // Izquierda
+    nf = fila_raton; nc = col_raton - 1;
+    s.izquierda    = (nc >= 0)              ? tablero[nf][nc]  : -1;
+    s.visitado_izq = (nc >= 0)              ? visitado[nf][nc] : false;
 
-        switch (tablero[nf][nc]) {
-            case VALOR_VACIO:           std::cout << "Vacio          "; break;
-            case VALOR_GATO:            std::cout << "GATO           "; break;
-            case VALOR_TRAMPA:          std::cout << "TRAMPA         "; break;
-            case VALOR_QUESO:           std::cout << "QUESO          "; break;
-            case VALOR_PELIGRO_GATO:    std::cout << "Peligro gato   "; break;
-            case VALOR_PELIGRO_TRAMPA:  std::cout << "Peligro trampa "; break;
-            default:                    std::cout << "Desconocido    "; break;
-        }
+    // Derecha
+    nf = fila_raton; nc = col_raton + 1;
+    s.derecha      = (nc < columnas)        ? tablero[nf][nc]  : -1;
+    s.visitado_der = (nc < columnas)        ? visitado[nf][nc] : false;
 
-        std::cout << "  | " << (visitado[nf][nc] ? "Si" : "No") << "\n";
-    }
-
-    std::cout << "Posicion actual del raton: (" << fila_raton << "," << col_raton << ")\n";
-    std::cout << "--------------------------------------------\n\n";
+    sensaciones[num_sensaciones] = s;
+    num_sensaciones++;
 }
 
-// ─── Tabla de acciones realizadas ─────────────────────────────────────────────
+// Imprime la matriz de sensaciones completa acumulada hasta el turno actual
+void imprimir_matriz_sensaciones(Sensacion sensaciones[], int num_sensaciones) {
+    std::cout << "----------------------------------------------------------------\n";
+    std::cout << "                  MATRIZ DE SENSACIONES\n";
+    std::cout << "----------------------------------------------------------------\n";
+    std::cout << "Turno | Pos    | Arriba         | Abajo          | Izq            | Der\n";
+    std::cout << "----------------------------------------------------------------\n";
+
+    for (int i = 0; i < num_sensaciones; i++) {
+        Sensacion &s = sensaciones[i];
+        std::cout << "  " << s.turno;
+        if (s.turno < 10)  std::cout << "   ";
+        else if (s.turno < 100) std::cout << "  ";
+        else std::cout << " ";
+
+        std::cout << "| (" << s.fila_raton << "," << s.col_raton << ") | ";
+        std::cout << nombre_valor(s.arriba)    << " | ";
+        std::cout << nombre_valor(s.abajo)     << " | ";
+        std::cout << nombre_valor(s.izquierda) << " | ";
+        std::cout << nombre_valor(s.derecha)   << "\n";
+    }
+
+    std::cout << "Total sensaciones registradas: " << num_sensaciones << "\n";
+    std::cout << "----------------------------------------------------------------\n\n";
+}
+
+// ─── Tabla de acciones ────────────────────────────────────────────────────────
 void imprimir_tabla_acciones(const char acciones[][30], int num_acciones) {
     std::cout << "--------------------------------------------\n";
-    std::cout << "         TABLA DE ACCIONES\n";
+    std::cout << "           MATRIZ DE ACCIONES\n";
     std::cout << "--------------------------------------------\n";
-    std::cout << "#   | Accion\n";
+    std::cout << "#     | Accion realizada\n";
     std::cout << "--------------------------------------------\n";
 
     for (int i = 0; i < num_acciones; i++) {
-        std::cout << i + 1 << "   | " << acciones[i] << "\n";
+        std::cout << "  " << i + 1;
+        if (i + 1 < 10)  std::cout << "   ";
+        else if (i + 1 < 100) std::cout << "  ";
+        else std::cout << " ";
+        std::cout << "| " << acciones[i] << "\n";
     }
 
     std::cout << "Total de acciones: " << num_acciones << "\n";

@@ -1,0 +1,1 @@
+g++ main.cpp tablero.cpp agente.cpp -o raton_queso.exe && ./raton_queso.exe
